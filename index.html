@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Plain Writing ↔ HTML Editor</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     html, body {
       height: 100%;
@@ -22,6 +22,9 @@
     h1 {
       margin: 0 0 12px;
       font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .grid {
@@ -52,76 +55,85 @@
       flex-shrink: 0;
     }
 
-    .toolbar button {
-      padding: 5px 8px;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      background: #fff;
-      cursor: pointer;
-      font-size: 13px;
+    .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #999;
+      letter-spacing: 0.5px;
     }
 
-    .editor {
-      padding: 14px;
+    #editor, #htmlBox {
       flex: 1;
-      outline: none;
-      line-height: 1.6;
-      overflow: auto;
-    }
-
-    .editor p {
-      margin: 0 0 1em;
-    }
-
-    textarea {
-      width: 100%;
-      flex: 1;
-      border: none;
-      padding: 14px;
-      font-family: ui-monospace, monospace;
-      font-size: 12.5px;
+      padding: 12px;
+      font-size: 14px;
       line-height: 1.5;
-      resize: none;
+      border: none;
       outline: none;
-      white-space: pre-wrap;
-      overflow: auto;
+      resize: none;
+      background: transparent;
+      overflow-y: auto;
     }
 
-    @media (max-width: 900px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
+    #htmlBox {
+      font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+      color: #000;
+      white-space: pre-wrap;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 4px;
+    }
+
+    .btn {
+      padding: 4px 8px;
+      font-size: 12px;
+      background: #eee;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #e0e0e0;
+    }
+
+    /* Push Button Styling */
+    .push-btn {
+      background: #80397B;
+      color: white;
+      border: none;
+      font-weight: bold;
+    }
+
+    .push-btn:hover {
+      background: #5c2d58;
     }
   </style>
 </head>
 <body>
-  <h1>Plain Writing Editor ↔ HTML</h1>
+  <h1>
+    Editor
+    <button class="btn push-btn" id="pushBtn">Push to Page</button>
+  </h1>
 
   <div class="grid">
     <div class="panel">
       <header>
-        <strong>Text</strong>
+        <span class="label">Rich Text</span>
         <div class="toolbar">
-          <button onclick="cmd('bold')"><b>B</b></button>
-          <button onclick="cmd('italic')"><i>I</i></button>
-          <button onclick="cmd('underline')"><u>U</u></button>
-          <button onclick="cmd('strikeThrough')"><s>S</s></button>
-          <button onclick="cmd('insertLineBreak')">BR</button>
-          <button onclick="newParagraph()">P</button>
-          <button onclick="insertLink()">Link</button>
-          <button onclick="removeLink()">Unlink</button>
+          <button class="btn" onclick="cmd('bold')">B</button>
+          <button class="btn" onclick="cmd('italic')">I</button>
+          <button class="btn" onclick="insertLink()">Link</button>
         </div>
       </header>
-      <div id="editor" class="editor" contenteditable="true">
-        <p>Type here.</p>
-      </div>
+      <div id="editor" contenteditable="true"><p></p></div>
     </div>
 
     <div class="panel">
-      <header>
-        <strong>HTML</strong>
-      </header>
-      <textarea id="htmlBox"></textarea>
+      <header><span class="label">HTML Source</span></header>
+      <textarea id="htmlBox" oninput="syncFromHtml()" spellcheck="false"></textarea>
     </div>
   </div>
 
@@ -130,29 +142,41 @@
     const htmlBox = document.getElementById("htmlBox");
     let syncing = false;
 
-    try {
-      document.execCommand("defaultParagraphSeparator", false, "p");
-    } catch {}
+    // Initialize Office Add-in
+    Office.onReady((info) => {
+      if (info.host === Office.HostType.OneNote) {
+        document.getElementById("pushBtn").onclick = pushContent;
+      }
+    });
 
-    function stripStylesAndAttrs(html) {
-      html = html.replace(/&nbsp;/gi, " ");
-      html = html.replace(/\s+(style|class|id|face|size|color|align)=(".*?"|'.*?'|[^\s>]+)/gi, "");
-      html = html.replace(/<span[^>]*>/gi, "").replace(/<\/span>/gi, "");
-      return html;
+    async function pushContent() {
+      const content = editor.innerHTML;
+      try {
+        await OneNote.run(async (context) => {
+          const page = context.application.getActivePage();
+          page.outlineContents.insertHtml(0, content);
+          await context.sync();
+        });
+      } catch (error) {
+        console.error("Error pushing to OneNote:", error);
+      }
     }
 
     function tidy(html) {
-      html = stripStylesAndAttrs(html);
+      html = html
+        .replace(/<div>/gi, "")
+        .replace(/<\/div>/gi, "<br>")
+        .replace(/<p><br><\/p>/gi, "<br>")
+        .replace(/<\/p><p>/gi, "<br>")
+        .replace(/<p>/gi, "")
+        .replace(/<\/p>/gi, "<br>");
+
+      const temp = document.createElement("div");
+      temp.innerHTML = html;
+      html = temp.innerHTML;
 
       html = html
-        .replace(/<div><br><\/div>/gi, "<p></p>")
-        .replace(/<div>/gi, "<p>")
-        .replace(/<\/div>/gi, "</p>")
-        .replace(/<br\s*\/>/gi, "<br>")
-        .trim();
-
-      html = html
-        .replace(/<\/p>/gi, "</p>\n\n")
+        .replace(/<br>\s*<br>/gi, "<br>\n")
         .replace(/<br>/gi, "<br>\n");
 
       return html.trim();
@@ -178,12 +202,6 @@
       syncFromEditor();
     }
 
-    function newParagraph() {
-      editor.focus();
-      document.execCommand("insertParagraph", false, null);
-      syncFromEditor();
-    }
-
     function insertLink() {
       editor.focus();
       const url = prompt("Enter URL");
@@ -192,35 +210,8 @@
       syncFromEditor();
     }
 
-    function removeLink() {
-      editor.focus();
-      document.execCommand("unlink", false, null);
-      syncFromEditor();
-    }
-
     editor.addEventListener("input", syncFromEditor);
     editor.addEventListener("paste", () => setTimeout(syncFromEditor, 0));
-
-    editor.addEventListener("keydown", (e) => {
-      const isK = e.key === "k" || e.key === "K";
-      if (e.ctrlKey && isK) {
-        e.preventDefault();
-        insertLink();
-      }
-    });
-
-    let t = null;
-    htmlBox.addEventListener("input", () => {
-      clearTimeout(t);
-      t = setTimeout(syncFromHtml, 250);
-    });
-
-    syncFromEditor();
   </script>
-Office.onReady((info) => {
-  if (info.host === Office.HostType.OneNote) {
-    console.log("Editor is ready in OneNote");
-  }
-});
 </body>
 </html>
